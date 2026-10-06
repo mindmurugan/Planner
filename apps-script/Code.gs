@@ -15,7 +15,7 @@ const SETTINGS = 'Settings';
 const HEAD = ['id', 'type', 'people', 'start', 'end', 'location', 'note', 'daysOverride', 'updatedBy', 'updatedAt'];
 const TYPES = ['travel', 'al', 'remote', 'dubai', 'ph', 'event'];
 const LABELS = { travel: 'Travel', al: 'Annual leave', remote: 'Work remote', dubai: 'In Dubai', ph: 'Public holiday', event: 'Event' };
-const SITE = 'https://mindmurugan.github.io/planner/';
+const SITE = 'https://mindmurugan.github.io/Planner/';
 
 /* ---------------- one-time setup ---------------- */
 

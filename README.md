@@ -2,7 +2,7 @@
 
 Shared travel, annual-leave and remote-day planner.
 
-- **Site:** `index.html`, served by GitHub Pages at https://mindmurugan.github.io/planner/
+- **Site:** `index.html`, served by GitHub Pages at https://mindmurugan.github.io/Planner/
 - **Data:** the Google Sheet *Muru & Saral Planner (data)* in Google Drive, through the Apps Script API in `apps-script/Code.gs`.
 
 No personal data or access keys are stored in this repo.
