@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Planner">
 <meta name="robots" content="noindex">
+<meta name="description" content="Muru & Saral travel, leave and remote-day planner">
+<script src="/supabase.min.js"></script>
 <title>Muru &amp; Saral Planner</title>
 <style>
 /* Layout: phone-first single column — now, balances, then calendar; bottom sheets for editing */
@@ -15,6 +17,10 @@
   --travel-m:#F5D04A;--travel-s:#F1B4C3;--both:#7DBBC3;--al:#F0943A;--remote:#97CBA2;--ph:#5B8DB8;--dubai:#C8CBD2;--event:#D24BE8;
   --r:18px;--shadow:0 1px 2px rgba(0,0,0,.04),0 6px 24px rgba(0,0,0,.05);
 }
+.auth{max-width:420px;margin:40px auto 0;display:flex;flex-direction:column;gap:12px}
+.auth .btn{flex:none}
+.auth .err{color:#D6453D;font-size:13px;min-height:18px}
+.code{letter-spacing:.4em;text-align:center;font-size:22px;font-variant-numeric:tabular-nums}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0E1013;--card:#171A1F;--ink:#ECEDEF;--mute:#959BA5;--line:#262A31;--soft:#1D2026;--accent:#A9C3E3;--shadow:none;color-scheme:dark}}
 :root[data-theme="dark"]{--bg:#0E1013;--card:#171A1F;--ink:#ECEDEF;--mute:#959BA5;--line:#262A31;--soft:#1D2026;--accent:#A9C3E3;--shadow:none;color-scheme:dark}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -187,25 +193,28 @@ function fr(a,b){if(!b||a===b)return fd(a);const A=parse(a),B=parse(b);
 function* days(a,b){let n=0;for(let s=a;s<=b&&n<400;s=addDays(s,1),n++)yield s;}
 const fmtN=n=>Number.isInteger(n)?String(n):n.toFixed(2).replace(/0+$/,'').replace(/\.$/,'');
 
-/* ---------- data API (Google Sheet via Apps Script) ---------- */
-const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
-let CONN=null,MOCK=null,lastSync=null;
-(function connectFromHash(){const m=location.hash.match(/connect=([A-Za-z0-9_\-=]+)/);
-  if(m){try{const raw=atob(m[1].replace(/-/g,'+').replace(/_/g,'/'));const i=raw.lastIndexOf('|');
-    if(i>0&&/^https:\/\/script\.google\.com\//.test(raw.slice(0,i)))LS.set('planner.conn',JSON.stringify({url:raw.slice(0,i),key:raw.slice(i+1)}));}catch(e){}
-    history.replaceState(null,'',location.pathname);}
-  try{CONN=JSON.parse(LS.get('planner.conn')||'null');}catch(e){CONN=null;}})();
-const ME=()=>LS.get('planner.me');
-const newId=()=>'';
-async function call(body){
-  if(MOCK)return MOCK(body);
-  const r=await fetch(CONN.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...body,key:CONN.key,by:ME()||''})});
-  const j=await r.json();if(!j.ok){const err=new Error(j.error||'error');err.code=j.error;throw err;}
-  S={...j.data};lastSync=new Date();gotE=gotS=true;paint();return j;}
+/* ---------- data (Supabase) ---------- */
+const SB_URL='https://letpyzescnhicrhmlgkv.supabase.co';
+const SB_KEY='sb_publishable_SXLD7GItJBrPMQIvh6tW3A_OaeQf0f7'; // publishable key: safe in the browser, data is protected by row-level security
+const sb=window.supabase?window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
+let MOCK=null,lastSync=null,MY_PERSON=null,MY_EMAIL='';
+const ME=()=>MY_PERSON;
+const fromRow=r=>({id:r.id,type:r.type,people:r.people||[],start:r.start_date,end:r.end_date,location:r.location||'',note:r.note||'',daysOverride:r.days_override==null?'':String(+r.days_override)});
+async function load(){
+  if(MOCK)return;
+  const [e,a]=await Promise.all([sb.from('entries').select('*').order('start_date'),sb.from('allowances').select('*')]);
+  if(e.error)throw e.error;if(a.error)throw a.error;
+  const settings={};for(const r of a.data)settings[`allow|${r.year}|${r.person}|${r.kind}`]=String(+r.days);
+  S={entries:e.data.map(fromRow),settings};lastSync=new Date();gotE=gotS=true;paint();}
 const api={
-  saveEntry:e=>call({action:'save',entry:e}),
-  deleteEntry:id=>call({action:'delete',id}),
-  saveSettings:m=>call({action:'settings',settings:m})
+  async saveEntry(e){if(MOCK)return MOCK.save(e);
+    const row={type:e.type,people:e.people,start_date:e.start,end_date:e.end,location:e.location,note:e.note,days_override:e.daysOverride===''?null:Number(e.daysOverride)};
+    const q=e.id?sb.from('entries').update(row).eq('id',e.id):sb.from('entries').insert(row);
+    const {error}=await q;if(error)throw error;await load();},
+  async deleteEntry(id){if(MOCK)return MOCK.del(id);const {error}=await sb.from('entries').delete().eq('id',id);if(error)throw error;await load();},
+  async saveSettings(m){if(MOCK)return MOCK.settings(m);
+    const rows=Object.entries(m).map(([k,v])=>{const[,y,p,kind]=k.split('|');return{year:+y,person:p,kind,days:Number(v)};}).filter(r=>r.year&&!isNaN(r.days));
+    const {error}=await sb.from('allowances').upsert(rows);if(error)throw error;await load();}
 };
 
 /* ---------- state ---------- */
@@ -331,17 +340,13 @@ function settingsSheet(){const y=cur.y;
   <div class="sgrid"><span></span><span class="h">Annual leave</span><span class="h">Remote</span>
   ${PEOPLE.map(p=>`<div class="who">${av(p)}${p}</div>${['al','remote'].map(k=>`<input inputmode="decimal" data-key="allow|${y}|${p}|${k}" value="${allow(y,p,k)}">`).join('')}`).join('')}</div>
   <div class="hint">Switch year with ‹ › in the Year view to set other years.</div></div>
-  <div class="f"><label>This phone belongs to</label><div class="opts who-pick">${PEOPLE.map(p=>`<button class="opt ${ME()===p?'on':''}" data-me="${p}">${av(p)}${p}</button>`).join('')}</div>
-  <div class="hint">New entries default to this person, and the other person gets the email.</div></div>
-  <div class="f"><label>Emails for change alerts</label>
-  ${PEOPLE.map(p=>`<div style="margin-bottom:8px"><input type="email" id="em-${p}" data-key="email|${p}" placeholder="${p}'s email" value="${esc(S.settings['email|'+p]||'')}"></div>`).join('')}
-  <div class="hint">When one of you saves an entry, the other gets a short email. Leave blank to turn off.</div></div>
   <div class="acts"><button class="btn" data-act="close">Cancel</button><button class="btn pri" data-act="saveSettings">Save</button></div>
-  <button class="linkbtn" data-act="disconnect">${MOCK?'':'Disconnect this phone'}</button>`);}
+  <div class="f"><label>Account</label><div class="sub">Signed in as <b>${esc(MY_PERSON||'')}</b> · ${esc(MY_EMAIL)}</div>
+  <button class="linkbtn" data-act="signout">Sign out</button></div>`);}
 
 /* ---------- events ---------- */
 async function run(fn,arg,msg){const btn=document.querySelector('[data-act="save"],[data-act="saveSettings"]');if(btn)btn.disabled=true;
-  try{await api[fn](arg);closeSheet();toast(msg);}catch(err){toast(err&&err.code==='unauthorised'?'This phone\'s link has expired. Open a new connect link.':err&&err.message&&!/fetch|network/i.test(err.message)&&err.code?err.message:'Couldn\'t save. Check your connection and try again.');if(btn)btn.disabled=false;}}
+  try{await api[fn](arg);closeSheet();toast(msg);}catch(err){toast(/JWT|auth|42501|row-level/i.test((err&&(err.message||err.code))||'')?'Your session ended. Sign in again.':'Couldn\'t save. Check your connection and try again.');if(btn)btn.disabled=false;}}
 document.addEventListener('click',ev=>{
   const t=ev.target.closest('[data-act],[data-view],[data-day],[data-edit],[data-month],[data-who],[data-type],[data-p]');if(!t)return;
   const a=t.dataset;
@@ -350,7 +355,6 @@ document.addEventListener('click',ev=>{
   if(a.edit){const e=S.entries.find(x=>x.id===a.edit);if(e)entrySheet(e);return;}
   if(a.month!==undefined){cur.m=+a.month;view='month';render();scrollTo({top:$('.seg').offsetTop-70,behavior:'smooth'});return;}
   if(a.who){who=a.who;render();return;}
-  if(a.me){LS.set('planner.me',a.me);document.querySelectorAll('[data-me]').forEach(b=>b.classList.toggle('on',b.dataset.me===a.me));return;}
   if(a.type){draft.type=a.type;if(a.type==='ph')draft.people=[];else if(!draft.people.length)draft.people=[ME()||'Muru'];syncForm();return;}
   if(a.p){draft.people=a.p==='both'?[...PEOPLE]:[a.p];syncForm();return;}
   switch(a.act){
@@ -363,7 +367,10 @@ document.addEventListener('click',ev=>{
     case 'add':entrySheet(null);break;
     case 'addOn':{const d=a.d;closeSheet();setTimeout(()=>{entrySheet(null);draft.start=draft.end=d;$('#fStart').value=$('#fEnd').value=d;syncForm();},280);break;}
     case 'close':closeSheet();break;
-    case 'disconnect':if(t.dataset.armed){LS.set('planner.conn',null);location.reload();}else{t.dataset.armed='1';t.textContent='Tap again to disconnect';}break;
+    case 'signout':closeSheet();sb&&sb.auth.signOut();break;
+    case 'sendCode':sendCode();break;
+    case 'verify':verifyCode();break;
+    case 'restart':signInScreen();break;
     case 'settings':settingsSheet();break;
     case 'del':if(!draft)break;if(t.dataset.armed)run('deleteEntry',draft.id,'Deleted');else{t.dataset.armed='1';t.textContent='Tap again to delete';}break;
     case 'save':{const s=$('#fStart').value,e=$('#fEnd').value||s;
@@ -380,19 +387,53 @@ document.addEventListener('keydown',ev=>{if(ev.key==='Escape')closeSheet();});
 
 let gotE=false,gotS=false;
 const paint=()=>{if(gotE&&gotS){reindex();render();}};
-function notConnected(){$('.fab').hidden=true;$('#app').innerHTML=`<div class="card" style="margin-top:28px"><div class="status">Connect this phone</div>
-  <p class="sub" style="font-size:14px;line-height:1.5">Open the connect link from your planner's Google Sheet on this phone (Apps Script → run <b>showLink</b>). You only need to do this once per phone.</p></div>`;}
-async function refresh(quiet){try{await call({action:'get'});}catch(err){if(err.code==='unauthorised'){LS.set('planner.conn',null);CONN=null;notConnected();}else if(!quiet){$('#app').innerHTML='<div class="load">Can\'t reach the planner. Check your connection and pull to refresh.</div>';}}}
+let pendingEmail='';
+function signInScreen(msg){$('.fab').hidden=true;
+  $('#app').innerHTML=`<form class="auth card" id="authForm" novalidate><div class="status">Sign in</div>
+  <p class="sub" style="font-size:14px;line-height:1.5;margin:0">Enter your email and we'll send you a 6-digit code.</p>
+  <input type="email" id="authEmail" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${esc(pendingEmail)}" required>
+  <div class="err" id="authErr">${esc(msg||'')}</div>
+  <button class="btn pri" type="submit">Send code</button></form>`;
+  $('#authForm').addEventListener('submit',ev=>{ev.preventDefault();sendCode();});}
+async function sendCode(){const em=($('#authEmail').value||'').trim().toLowerCase();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){$('#authErr').textContent='Enter a valid email address.';return;}
+  const btn=$('#authForm button');btn.disabled=true;btn.textContent='Sending…';
+  const {error}=await sb.auth.signInWithOtp({email:em,options:{shouldCreateUser:true,emailRedirectTo:location.origin}});
+  if(error){btn.disabled=false;btn.textContent='Send code';$('#authErr').textContent=/not allowed|Database error/i.test(error.message)?'This email isn\'t set up for the planner.':/rate|seconds/i.test(error.message)?'Too many attempts. Wait a minute and try again.':'Couldn\'t send the code. Try again.';return;}
+  pendingEmail=em;
+  $('#app').innerHTML=`<form class="auth card" id="codeForm" novalidate><div class="status">Check your email</div>
+  <p class="sub" style="font-size:14px;line-height:1.5;margin:0">We sent a code to <b>${esc(em)}</b>. Enter it below, or tap the link in the email.</p>
+  <input id="authCode" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="••••••">
+  <div class="err" id="authErr"></div>
+  <button class="btn pri" type="submit">Sign in</button><button class="linkbtn" type="button" data-act="restart">Use a different email</button></form>`;
+  $('#codeForm').addEventListener('submit',ev=>{ev.preventDefault();verifyCode();});$('#authCode').focus();}
+async function verifyCode(){const token=($('#authCode').value||'').replace(/\D/g,'');if(token.length<6){$('#authErr').textContent='Enter the code from the email.';return;}
+  const {error}=await sb.auth.verifyOtp({email:pendingEmail,token,type:'email'});
+  if(error)$('#authErr').textContent='That code didn\'t work or has expired. Request a new one.';}
+let channel=null,started=false;
+async function startApp(session){
+  if(started)return;started=true;MY_EMAIL=session.user.email||'';
+  $('#app').innerHTML='<div class="load">Loading planner…</div>';
+  const m=await sb.from('members').select('person,email');
+  MY_PERSON=(m.data||[]).find(r=>r.email===MY_EMAIL.toLowerCase())?.person||null;
+  if(!MY_PERSON){started=false;await sb.auth.signOut();return;}
+  $('.fab').hidden=false;
+  try{await load();}catch(e){$('#app').innerHTML='<div class="load">Can\'t reach the planner. Check your connection and reload.</div>';}
+  let t=null;const soon=()=>{clearTimeout(t);t=setTimeout(()=>load().catch(()=>{}),250);};
+  channel=sb.channel('planner').on('postgres_changes',{event:'*',schema:'public',table:'entries'},soon).on('postgres_changes',{event:'*',schema:'public',table:'allowances'},soon).subscribe();
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&started)soon();});
+}
 async function boot(){
-  if(window.__SEED){let st={entries:window.__SEED.map(x=>({...x})),settings:{}};
-    MOCK=async b=>{if(b.action==='save'){const e={...b.entry,id:b.entry.id||Math.random().toString(36).slice(2,10)};st.entries=st.entries.filter(x=>x.id!==e.id).concat([e]);}
-      if(b.action==='delete')st.entries=st.entries.filter(x=>x.id!==b.id);if(b.action==='settings')st.settings={...st.settings,...b.settings};
-      S=JSON.parse(JSON.stringify(st));lastSync=new Date();gotE=gotS=true;paint();return{ok:true};};
-    return MOCK({action:'get'});}
-  if(!CONN)return notConnected();
-  await refresh(false);
-  setInterval(()=>{if(!document.hidden&&!$('#sheet').classList.contains('on'))refresh(true);},60000);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh(true);});
+  if(window.__SEED){let st={entries:window.__SEED.map(x=>({...x})),settings:{}};MY_PERSON='Muru';MY_EMAIL='preview';
+    const push=()=>{S=JSON.parse(JSON.stringify(st));lastSync=new Date();gotE=gotS=true;paint();};
+    MOCK={save(e){e={...e,id:e.id||Math.random().toString(36).slice(2,10)};st.entries=st.entries.filter(x=>x.id!==e.id).concat([e]);push();},
+      del(id){st.entries=st.entries.filter(x=>x.id!==id);push();},settings(m){st.settings={...st.settings,...m};push();}};
+    return push();}
+  if(!sb){$('#app').innerHTML='<div class="load">Couldn\'t load. Check your connection and reload.</div>';return;}
+  sb.auth.onAuthStateChange((ev,session)=>{
+    if(session)setTimeout(()=>startApp(session),0);
+    else{started=false;MY_PERSON=null;if(channel){sb.removeChannel(channel);channel=null;}signInScreen();}});
+  const {data}=await sb.auth.getSession();
+  if(!data.session)signInScreen();
 }
 boot();
 </script>
