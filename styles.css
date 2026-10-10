@@ -54,7 +54,7 @@ main{padding:4px 16px 120px}
 .mhead h2{margin:0;font-size:20px;letter-spacing:-.02em}
 .mhead h2 span{color:var(--mute);font-weight:500}
 .mhead .ic{box-shadow:none;background:var(--soft)}
-.wk,.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.wk,.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
 .wk span{text-align:center;font-size:11px;font-weight:600;color:var(--mute);padding-bottom:4px}
 .day{aspect-ratio:1/1.05;border-radius:12px;background:var(--soft);position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
 .day b{font-size:15px;font-weight:600}
@@ -72,7 +72,8 @@ main{padding:4px 16px 120px}
 .mini h4{margin:0 0 8px;font-size:13px;font-weight:700;text-align:left;width:100%}
 .mini .grid,.mini .wk{gap:2px}
 .mini .wk span{font-size:9px;padding:0}
-.mini .day{border-radius:5px;aspect-ratio:1;background:none}
+.mini .day{border-radius:5px;aspect-ratio:1;height:auto;min-width:0;background:none}
+.mini .day b{line-height:1}
 .mini .day b{font-size:10px;font-weight:500}
 .mini .day.c b{font-weight:600}
 .mini .day.today{box-shadow:0 0 0 1.5px var(--ink)}
@@ -144,7 +145,7 @@ main{padding:4px 16px 120px}
 .side{display:flex;flex-direction:column;gap:10px;min-width:0}
 .side .label:first-child,.col-main .label:first-child{margin-top:0}
 @media(min-width:900px){
-  .col-main .grid .day:not(.empty){aspect-ratio:auto;height:clamp(52px,6.2vw,76px)}
+  .col-main .card:not(.mini) .grid .day:not(.empty){aspect-ratio:auto;height:clamp(52px,6.2vw,76px)}
   .layout{grid-template-columns:minmax(0,1fr) 340px;align-items:start}
   .side{position:sticky;top:calc(env(safe-area-inset-top,0px) + 76px)}
   .now{grid-template-columns:1fr}
