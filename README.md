@@ -2,13 +2,19 @@
 
 Shared travel, annual-leave and remote-day planner.
 
-- **Site:** `index.html`, a single static page hosted on Vercel.
+- **Site:** `index.html`, `styles.css`, `app.js`: a static site hosted on Vercel (auto-deploys from `main`).
 - **Data and sign-in:** Supabase project **Planner** (Mumbai). Schema in `supabase/migrations/`.
 - **Access:** only the two emails in the `members` table can sign in. Row-level security blocks everyone else, including anyone holding the public key.
 
 ## Sign-in
 
 Enter your email and get a 6-digit code (or tap the link in the email). Each phone stays signed in.
+
+## Settings (⚙︎)
+
+- Yearly allowances per person.
+- Colours for Muru, Saral and travelling together.
+- Categories: rename or recolour any, add your own and choose whether it counts against annual leave, remote days or neither. A category in use can't be deleted.
 
 ## How it counts
 
