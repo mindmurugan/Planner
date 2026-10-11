@@ -396,6 +396,53 @@ document.addEventListener('input', ev => {
 });
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
 
+/* ---------- hover preview (mouse / trackpad only; touch keeps tap-to-open) ---------- */
+const canHover = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
+let peekEl = null, peekTimer = null, peekDay = null;
+function statusOn(d, p) {
+  const o = IDX[d]; let e = null;
+  if (o) for (const x of o.list) if (!cat(x.type).everyone && x.people.includes(p) && (!e || pri(x) > pri(e))) e = x;
+  if (e) return { text: label(e), color: colorFor(e, p) };
+  return { text: 'In Dubai', color: '' };
+}
+function peekHtml(d) {
+  const dt = parse(d), w = dt.getUTCDay(), ws = addDays(d, -w), we = addDays(ws, 6);
+  const o = IDX[d], hol = o && o.all ? `<div class="pk-hol"><i style="background:${cat(o.all.type).color}"></i>${esc(label(o.all))}</div>` : '';
+  const people = PEOPLE.map(p => { const s = statusOn(d, p); return `<div class="pk-row">${av(p)}<span class="pk-st">${s.color ? `<i style="background:${s.color}"></i>` : ''}${esc(s.text)}</span></div>`; }).join('');
+  const week = S.entries.filter(e => e.start <= we && e.end >= ws && e.type !== 'dubai')
+    .sort((a, b) => a.start < b.start ? -1 : a.start > b.start ? 1 : pri(b) - pri(a));
+  const wk = week.length
+    ? week.slice(0, 6).map(e => `<div class="pk-w"><i style="background:${entryColor(e)}"></i><span class="pk-l">${esc(label(e))}</span><span class="pk-d">${fr(e.start, e.end)}</span><span class="pk-who">${e.people.map(p => p[0]).join('·')}</span></div>`).join('') + (week.length > 6 ? `<div class="pk-more">+${week.length - 6} more</div>` : '')
+    : '<div class="pk-more">Nothing else this week</div>';
+  return `<div class="pk-h">${dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}${d === TODAY ? ' · Today' : ''}</div>
+    ${hol}${people}
+    <div class="pk-sub">Week of ${fr(ws, we)}</div>${wk}`;
+}
+function showPeek(btn) {
+  const d = btn.dataset.day; if (!d) return;
+  if (!peekEl) { peekEl = document.createElement('div'); peekEl.className = 'peek'; peekEl.setAttribute('role', 'tooltip'); document.body.appendChild(peekEl); }
+  peekDay = d; peekEl.innerHTML = peekHtml(d); peekEl.classList.add('on');
+  const r = btn.getBoundingClientRect(), pw = peekEl.offsetWidth, ph = peekEl.offsetHeight, gap = 8;
+  let x = r.right + gap, y = r.top;
+  if (x + pw > innerWidth - 12) x = r.left - pw - gap;
+  if (x < 12) x = Math.min(innerWidth - pw - 12, Math.max(12, r.left));
+  if (y + ph > innerHeight - 12) y = innerHeight - ph - 12;
+  peekEl.style.left = Math.max(12, x) + 'px'; peekEl.style.top = Math.max(12, y) + 'px';
+}
+function hidePeek() { clearTimeout(peekTimer); peekDay = null; if (peekEl) peekEl.classList.remove('on'); }
+if (canHover) {
+  document.addEventListener('mouseover', ev => {
+    const b = ev.target.closest('.day[data-day]');
+    if (!b) return;
+    if (b.dataset.day === peekDay) return;
+    clearTimeout(peekTimer); peekTimer = setTimeout(() => showPeek(b), peekEl && peekEl.classList.contains('on') ? 0 : 180);
+  });
+  document.addEventListener('mouseout', ev => { const b = ev.target.closest('.day[data-day]'); if (b && !b.contains(ev.relatedTarget)) { clearTimeout(peekTimer); peekTimer = setTimeout(hidePeek, 120); } });
+  document.addEventListener('focusin', ev => { const b = ev.target.closest && ev.target.closest('.day[data-day]'); if (b && b.matches(':focus-visible')) showPeek(b); else hidePeek(); });
+  addEventListener('scroll', hidePeek, { passive: true });
+  document.addEventListener('click', hidePeek, true);
+}
+
 /* ---------- sign-in ---------- */
 let pendingEmail = '';
 function signInScreen(msg) {
